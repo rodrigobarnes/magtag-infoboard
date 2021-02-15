@@ -12,4 +12,6 @@ This uses the [ipgeolocation API](https://ipgeolocation.io/documentation.html) t
 
 In addition to your WiFi network and password. Make sure [`secrets.py`](./secrets.py) also has the API key for ipgeolocation.
 
+## Volatage check
 
+A side utility, to check the voltage on the battery, copy the file `voltage-check.py` as `code.py` to the device. This will read the voltage on the monitor, print the reading and calcualte the voltage.
