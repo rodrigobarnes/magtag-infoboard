@@ -32,11 +32,11 @@ cities = [
     # ("Sydney",       "Australia/Brisbane")
 ]
 
+# Future Use
 home_city = 'Edinburgh'
 city_names = [c[0] for c in cities]
 city_timezones = { c[0]: c[1] for c in cities }
 
-# Future use
 button_colors = ((255, 0, 0), (255, 150, 0), (0, 255, 255), (180, 0, 255))
 button_tones = (1047, 1318, 1568, 2093)
 
@@ -48,18 +48,10 @@ TIME_URL = 'https://api.ipgeolocation.io/timezone?apiKey={}&tz={}'
 
 magtag = MagTag()
 
-def display_text(message):
-    global magtag
-    magtag.add_text(
-        text_position=(
-            25,
-            (magtag.graphics.display.height // 2) - 1,
-        ),
-        text_scale=2,
-    )
-    magtag.set_text(message)
-
 def initialise_wifi():
+    """
+    Connect to WiFi as configured in `secrets.py`
+    """
     print("Initialising WiFi ...")
     try:
         from secrets import secrets
@@ -74,6 +66,10 @@ def initialise_wifi():
     return(requests)
 
 def get_time_info(cities, city_timezones):
+    """
+    Fetch the time for a number of timezones using an API.
+    Requires an account.
+    """
     items = []
     for c in cities:
         if c not in city_timezones:
@@ -98,14 +94,17 @@ def get_time_info(cities, city_timezones):
     return items
 
 def display_times(labels):
+    """
+    Update the grid of labels with local time for a list cities
+    """
+    # Fetch the information
     city_info = get_time_info(city_names, city_timezones)
-    # Add the new ones
+    # Update the labels
     for i in range(len(labels)):
         c_info = city_info[i]
         c_text = "{}\n{} ({})\n{}".format(c_info[0], c_info[2], c_info[3], c_info[1])
-        # print(c_text, p)
         labels[i].text= c_text
-
+    # Need to refresh the screen
     magtag.refresh()
 
 # ---------------------------------------------------------------------------------
@@ -123,11 +122,12 @@ for i in range(len(positions)):
     labels.append(l)
     magtag.splash.append(l)
 
-# Retrieve the city info
+# Retrieve the city info - first pass
 display_times(labels)
 
 while True:
     for i, b in enumerate(magtag.peripherals.buttons):
+        # If button 0 is pressed - display the local time at cities
         if i == 0 and not b.value:
             print('Refresh time')
             magtag.peripherals.neopixel_disable = False
