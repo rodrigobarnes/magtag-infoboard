@@ -3,10 +3,49 @@ import ssl
 import wifi
 import socketpool
 import adafruit_requests
+import terminalio
 import time
-from adafruit_magtag.magtag import MagTag
+import displayio
+import board
 
-print('Start')
+from adafruit_display_text import label
+from adafruit_magtag.magtag import MagTag
+from secrets import secrets
+
+# ---------------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------------
+
+# These are just timezones I'm interested in
+# I've layed them out East to West to match the cycling below
+cities = [
+    ("Seattle",      "America/Los_Angeles"),
+    ("Tucson",       "America/Phoenix"),
+    # ("Saskatoon",    "Canada/Saskatchewan"),
+    ("Edinburgh",    "Europe/Dublin"),
+    ("Amsterdam",    "Europe/Amsterdam"),
+    # ("Kuwait",       "Asia/Kuwait"),
+    ("Hyderabad",    "Asia/Kolkata"),
+    ("Perth",        "Australia/Perth"),
+    # ("Melbourne",    "Australia/Victoria"),
+    # ("Sydney",       "Australia/Sydney"),
+    # ("Sydney",       "Australia/Brisbane")
+]
+
+home_city = 'Edinburgh'
+city_names = [c[0] for c in cities]
+city_timezones = { c[0]: c[1] for c in cities }
+
+# Future use
+button_colors = ((255, 0, 0), (255, 150, 0), (0, 255, 255), (180, 0, 255))
+button_tones = (1047, 1318, 1568, 2093)
+
+TIME_URL = 'https://api.ipgeolocation.io/timezone?apiKey={}&tz={}'
+
+# ---------------------------------------------------------------------------------
+# Functions
+# ---------------------------------------------------------------------------------
+
 magtag = MagTag()
 
 def display_text(message):
@@ -20,89 +59,81 @@ def display_text(message):
     )
     magtag.set_text(message)
 
-def display_time(city):
-    if city not in city_names:
-        city = city_names[0]
-    timezone = city_timezones[city]
+def initialise_wifi():
+    print("Initialising WiFi ...")
+    try:
+        from secrets import secrets
+    except ImportError:
+        print("WiFi secrets are kept in secrets.py, please add them there!")
+        raise
 
-    display_text("Fetching: {}\n{}".format(city, timezone))
+    wifi.radio.connect(secrets["ssid"], secrets["password"])
+    pool = socketpool.SocketPool(wifi.radio)
+    requests = adafruit_requests.Session(pool, ssl.create_default_context())
+    print("Initialising WiFi ... {} connected".format(secrets['ssid']))
+    return(requests)
 
-    TIME_URL = 'https://api.ipgeolocation.io/timezone?apiKey={}&tz={}'.format(secrets['ipgl_key'], timezone)
+def get_time_info(cities, city_timezones):
+    items = []
+    for c in cities:
+        if c not in city_timezones:
+            print('Error - city not found: {}'.format(c))
+        else:
+            tz = city_timezones[c]
+            print('City - {} - {}'.format(c, tz))
+            url = TIME_URL.format(secrets['ipgl_key'], tz)
+            response = requests.get(url)
+            tz_info = response.json()
+            if 'message' in tz_info:
+                print('Error - failed request: {}'.format(tz_info['message']))
+            else:
+                if tz_info["timezone_offset"] <= 0:
+                    tz_offset = tz_info["timezone_offset"]
+                else:
+                    tz_offset = "+{}".format(tz_info["timezone_offset"])
 
-    response = requests.get(TIME_URL)
-    if 'message' in response.json():
-        display_text(response.json()['message'])
-    else:
-        tz_info = response.json()
-        tz_offset = tz_info["timezone_offset"] if tz_info["timezone_offset"] <= 0 else "+{}".format(tz_info["timezone_offset"])
+                item = [c, tz_info['date'], tz_info['time_24'], tz_offset]
+                print(item)
+                items.append(item)
+    return items
 
-        time_to_display = "{} ({})\n{} {}\n{}".format(city, tz_offset, tz_info["time_24"], tz_info["date"], tz_info["timezone"])
-        display_text(time_to_display)
+def display_times(labels):
+    city_info = get_time_info(city_names, city_timezones)
+    # Add the new ones
+    for i in range(len(labels)):
+        c_info = city_info[i]
+        c_text = "{}\n{} ({})\n{}".format(c_info[0], c_info[2], c_info[3], c_info[1])
+        # print(c_text, p)
+        labels[i].text= c_text
 
+    magtag.refresh()
 
+# ---------------------------------------------------------------------------------
+# Main loop
+# ---------------------------------------------------------------------------------
 
-    
-# Initialise Wifi
-display_text("Initialising WiFi ...")
-try:
-    from secrets import secrets
-except ImportError:
-    print("WiFi secrets are kept in secrets.py, please add them there!")
-    raise
-    
-wifi.radio.connect(secrets["ssid"], secrets["password"])
-pool = socketpool.SocketPool(wifi.radio)
-requests = adafruit_requests.Session(pool, ssl.create_default_context())
+# Get on the network
+requests = initialise_wifi()
 
-display_text("WiFi: {}".format(secrets['ssid']))
+positions = [(10,10), (105,10), (200,10), (10, 70), (105,70), (200, 70)]
+labels = []
+for i in range(len(positions)):
+    p = positions[i]
+    l = label.Label(terminalio.FONT, x=p[0], y=p[1], text=" "*150, color=0x000000)
+    labels.append(l)
+    magtag.splash.append(l)
 
-button_colors = ((255, 0, 0), (255, 150, 0), (0, 255, 255), (180, 0, 255))
-button_tones = (1047, 1318, 1568, 2093)
+# Retrieve the city info
+display_times(labels)
 
-# These are just timezones I'm interested in
-# I've layed them out East to West to match the cycling below
-cities = [
-    ("Seattle",      "America/Los_Angeles"),
-    ("Tucson",       "America/Phoenix"),
-    ("Saskatoon",    "Canada/Saskatchewan"),
-    ("Edinburgh",    "Europe/Dublin"),
-    ("Amsterdam",    "Europe/Amsterdam"),
-    ("Kuwait",       "Asia/Kuwait"),
-    ("Hyderabad",    "Asia/Kolkata"),
-    ("Perth",        "Australia/Perth"),
-    ("Melbourne",    "Australia/Victoria"),
-    ("Sydney",       "Australia/Sydney")
-]
-
-home_city = 'Edinburgh'
-city_names = [c[0] for c in cities]
-city_timezones = { c[0]: c[1] for c in cities }
-
-# Default city is your home city
-current_city_idx = city_names.index(home_city)
-display_time(city_names[current_city_idx])
-
-# The main loop
 while True:
     for i, b in enumerate(magtag.peripherals.buttons):
-        if not b.value:
-            # print("Button %c pressed" % chr((ord("A") + i)))
+        if i == 0 and not b.value:
+            print('Refresh time')
             magtag.peripherals.neopixel_disable = False
             magtag.peripherals.neopixels.fill(button_colors[i])
-            
-            # magtag.peripherals.play_tone(button_tones[i], 0.25)
-            
-            # First button - cycle up through the list (e.g. East to West depending on the list)
-            if i == 0:
-                current_city_idx = current_city_idx - 1 if current_city_idx > 0 else (len(city_names) - 1)
-                display_time(city_names[current_city_idx])
-            # First button - cycle down through the list of cities 
-            if i == 1:
-                current_city_idx = current_city_idx + 1 if current_city_idx < (len(city_names) -1) else 0
-                display_time(city_names[current_city_idx])
-                
-            
-            break
-    else:
-        magtag.peripherals.neopixel_disable = True
-    time.sleep(0.01)
+            display_times(labels)
+        else:
+            magtag.peripherals.neopixel_disable = True
+
+    time.sleep(0.1)
